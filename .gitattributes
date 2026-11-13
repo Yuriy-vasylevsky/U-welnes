@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Preserve supplied SVG bytes and geometry exactly.
+*.svg -text

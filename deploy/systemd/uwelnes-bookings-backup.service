@@ -1,0 +1,8 @@
+[Unit]
+Description=Backup U-Wellness bookings
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/uwelnes/deploy/backup-bookings.sh
+UMask=0077

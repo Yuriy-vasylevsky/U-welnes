@@ -1,0 +1,35 @@
+[Unit]
+Description=U-Wellness reservation API
+Wants=network-online.target
+After=network-online.target docker.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=uwelnes-bot
+Group=uwelnes-bot
+WorkingDirectory=/opt/uwelnes
+EnvironmentFile=/etc/uwelnes/bot.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+# Existing Docker edge bridge; no public host interface is bound.
+ExecStart=/opt/uwelnes/.venv/bin/python -m uvicorn wellness.main:app --host 172.18.0.1 --port 8010 --no-access-log
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+MemoryMax=192M
+
+[Install]
+WantedBy=multi-user.target

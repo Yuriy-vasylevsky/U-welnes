@@ -1,0 +1,18 @@
+# Append to the existing edge Caddyfile; never replace other site blocks.
+uwelnes.site {
+    encode zstd gzip
+    handle /api/* {
+        reverse_proxy 172.18.0.1:8010
+    }
+    handle /health {
+        reverse_proxy 172.18.0.1:8010
+    }
+    handle {
+      reverse_proxy {
+        dynamic a uwelnes-web 8080 {
+            refresh 5s
+            resolvers 127.0.0.11
+        }
+      }
+    }
+}

@@ -1,0 +1,36 @@
+name: uwelnes
+services:
+  web:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    volumes:
+      - /opt/uwelnes/web:/srv/web:ro
+      - /opt/uwelnes/deploy/Caddyfile.web:/etc/caddy/Caddyfile:ro
+    networks:
+      edge:
+        aliases: [uwelnes-web]
+    read_only: true
+    tmpfs:
+      - /data:size=16m
+      - /config:size=16m
+    cap_drop: [ALL]
+    # The upstream Caddy binary carries this file capability; it must remain
+    # in the bounding set even though this container listens on port 8080.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 96m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+networks:
+  edge:
+    external: true
+    name: telegram-lead-hunter_default
