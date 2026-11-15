@@ -1,33 +1,49 @@
 import asyncio
 import logging
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
-    MenuButtonWebApp, Message, WebAppInfo,
+    MenuButtonWebApp, Message, WebAppInfo, FSInputFile,
 )
 
 from .config import Settings
+from .booking_display import format_bookings
 
 BOOK = "Забронювати"
 BOOKINGS = "Мої бронювання"
 INFO = "Інформація"
+WELCOME_PHOTO = Path(__file__).parent / "media" / "welcome.png"
+WELCOME_CAPTION = (
+    "☀️ <b>Вітаємо в U-Wellness Space!</b>\n\n"
+    "💦 Ваш день біля басейну починається тут — обирайте зручне місце та плануйте відпочинок.\n\n"
+    "🗓 <b>Забронювати</b> — оберіть дату й один або кілька шезлонгів на карті.\n"
+    "🎟 <b>Мої бронювання</b> — усі ваші заплановані відвідування.\n"
+    "🌿 <b>Інформація</b> — більше про наш простір.\n\n"
+    "🕒 Обирайте повний день або пів дня — тариф залежить від дати та часу.\n"
+    "🔞 У середу весь день і в суботу ввечері — відпочинок 18+.\n\n"
+    "👇 Натисніть «Забронювати» та оберіть своє місце для відпочинку!"
+)
 
 
 def booking_url(url: str) -> str:
     return url.rstrip("/") + "/book"
 
 
-def main_keyboard(url: str) -> InlineKeyboardMarkup:
+def main_keyboard(url: str, is_admin: bool = False) -> InlineKeyboardMarkup:
     # Inline Web App launch provides signed initData for API authentication.
     # Reply-keyboard Web Apps may have empty initData and cannot identify users.
-    return InlineKeyboardMarkup(inline_keyboard=[
+    rows = [
         [InlineKeyboardButton(text=BOOK, web_app=WebAppInfo(url=booking_url(url)))],
         [InlineKeyboardButton(text=BOOKINGS, callback_data="bookings"),
          InlineKeyboardButton(text=INFO, callback_data="info")],
-    ])
+    ]
+    if is_admin:
+        rows.append([InlineKeyboardButton(text="Адмінпанель", web_app=WebAppInfo(url=url.rstrip("/") + "/admin"))])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def launch_keyboard(url: str) -> InlineKeyboardMarkup:
@@ -54,20 +70,19 @@ def create_router(settings: Settings) -> Router:
         if message.chat.type != ChatType.PRIVATE:
             await message.answer("Відкрийте приватний чат із ботом, щоб переглянути карту басейну.")
             return
-        await message.answer(
-            "Вітаємо в U-Wellness Space!\n\n"
-            "«Забронювати» — обрати дату й шезлонг на карті.\n"
-            "«Мої бронювання» — переглянути свої записи.\n"
-            "«Інформація» — дізнатися про простір.",
-            reply_markup=main_keyboard(settings.webapp_url),
+        await message.answer_photo(
+            photo=FSInputFile(WELCOME_PHOTO),
+            caption=WELCOME_CAPTION,
+            parse_mode="HTML",
+            reply_markup=main_keyboard(settings.webapp_url, bool(message.from_user and message.from_user.id in settings.admin_telegram_ids)),
         )
 
     @router.message(F.chat.type == ChatType.PRIVATE, Command("book"))
     @router.message(F.chat.type == ChatType.PRIVATE, F.text == BOOK)
     async def book(message: Message) -> None:
         await message.answer(
-            "Оберіть дату та вільний шезлонг на карті. Бронювання — на цілий день.\n"
-            "Онлайн-оплата поки не підключена; тарифи й умови уточнюються.",
+            "🗓 Оберіть дату, час відвідування та вільні шезлонги на карті.\n"
+            "💰 Ціну за місце й загальну суму побачите перед підтвердженням. Онлайн-оплата ще не підключена.",
             reply_markup=launch_keyboard(settings.webapp_url),
         )
 
@@ -94,25 +109,33 @@ def create_router(settings: Settings) -> Router:
             logging.getLogger(__name__).warning("Could not load bookings")
             await message.answer("Не вдалося завантажити бронювання. Спробуйте пізніше.")
             return
-        if not items:
-            await message.answer("У вас поки немає бронювань.", reply_markup=main_keyboard(settings.webapp_url))
-            return
-        # Keep messages below Telegram's limit without dropping any records.
-        for offset in range(0, len(items), 25):
-            lines = ["Мої бронювання", ""]
-            for item in items[offset:offset + 25]:
-                lines.append(f"{item['day']} · шезлонг {item['seat_id']} · на цілий день")
-                lines.append(f"Номер: {item['id']}")
-            await message.answer("\n".join(lines), reply_markup=main_keyboard(settings.webapp_url))
+        for text in format_bookings(items):
+            await message.answer(text, parse_mode="HTML", reply_markup=main_keyboard(
+                settings.webapp_url, user_id in settings.admin_telegram_ids,
+            ))
 
     @router.message(F.chat.type == ChatType.PRIVATE, Command("info"))
     @router.message(F.chat.type == ChatType.PRIVATE, F.text == INFO)
     async def info(message: Message) -> None:
+        from .tariffs import tariff_summary
+        overrides = None
+        if settings.database_url.get_secret_value():
+            def load_tariffs():
+                from .booking_store import BookingStore
+                database = BookingStore(settings.database_url.get_secret_value())
+                try:
+                    return database.tariff_overrides()
+                finally:
+                    database.close()
+            try:
+                overrides = await asyncio.to_thread(load_tariffs)
+            except Exception:
+                await message.answer("🌿 U-Wellness Space\n\nНе вдалося отримати актуальні тарифи. Спробуйте пізніше.", reply_markup=main_keyboard(settings.webapp_url))
+                return
         await message.answer(
-            "U-Wellness Space\n\n"
-            "У Mini App можна переглянути карту басейну й обрати шезлонг на цілий день.\n"
-            "Для бронювання відкрийте Mini App через цього бота.\n\n"
-            "Онлайн-оплата ще не підключена. Тарифи, розклад і правила скасування уточнюються.",
+            "🌿 U-Wellness Space\n\n" + tariff_summary(overrides) +
+            "\n\nЦіни за один шезлонг. Онлайн-оплата ще не підключена.\n"
+            "Для бронювання відкрийте карту через кнопку нижче.",
             reply_markup=main_keyboard(settings.webapp_url),
         )
 
@@ -136,6 +159,16 @@ def create_router(settings: Settings) -> Router:
             "Масштабуйте карту двома пальцями або кнопками та натисніть на шезлонг.",
             reply_markup=main_keyboard(settings.webapp_url) if message.chat.type == ChatType.PRIVATE else None,
         )
+
+    @router.message(F.chat.type == ChatType.PRIVATE, Command("admin"))
+    async def admin_panel(message: Message) -> None:
+        if not message.from_user or message.from_user.id not in settings.admin_telegram_ids:
+            await message.answer("Доступ лише для адміністратора.")
+            return
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Відкрити адмінпанель", web_app=WebAppInfo(url=settings.webapp_url.rstrip("/") + "/admin"))
+        ]])
+        await message.answer("🛠 Меню адміністратора: карта й доступність місць або редагування цін.", reply_markup=keyboard)
 
     return router
 

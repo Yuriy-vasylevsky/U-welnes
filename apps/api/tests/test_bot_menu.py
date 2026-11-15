@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from wellness.bot import BOOK, BOOKINGS, INFO, create_router, main_keyboard
 from wellness.config import Settings
+from wellness.booking_store import today_kyiv
 
 TOKEN = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk"
 
@@ -30,12 +31,13 @@ def test_menu_text_commands_and_actual_bookings():
                 update=Update.model_validate({"update_id":1,"message":message})
                 bot.session.make_request=AsyncMock()
                 with patch("wellness.booking_store.BookingStore") as store:
-                    store.return_value.for_user.return_value=[{"id":"test-booking","seat_id":"S001","day":"2026-12-01"}]
+                    store.return_value.for_user.return_value=[{"id":"test-booking","seat_id":"S001","day":today_kyiv().isoformat()}]
                     await dispatcher.feed_update(bot,update)
                     method=bot.session.make_request.call_args.args[1]
                     if text in [BOOKINGS,"/bookings"]:
                         store.return_value.for_user.assert_called_once_with(123)
-                        assert "test-booking" in method.text
+                        assert "S001" in method.text and "test-booking" not in method.text
+                        assert method.parse_mode == "HTML"
                     elif text in [BOOK,"/book"]:
                         assert method.reply_markup.inline_keyboard[0][0].web_app.url.endswith("/book")
                     else:

@@ -1,5 +1,9 @@
 # Daily seat booking — 13 November 2026
 
+Current pricing and half-day implementation: [pricing.md](pricing.md).
+It supersedes the initial whole-day-only rules below; prices are now configured,
+and slot uniqueness replaces the former `(day, seat_id)` constraint.
+
 The user authorized booking after the initial infrastructure milestone, with a
 whole-day reservation for a chosen date. Prices, limits, cancellations and
 other commercial terms were deferred. This implementation does not collect
@@ -10,9 +14,13 @@ money, claim that admission is free, or add cancellation rules.
 - `/start` shows three inline buttons: «Забронювати», «Мої бронювання»,
   «Інформація».
 - «Забронювати» and the bot's Web App menu open `https://uwelnes.site/book`.
-- Choose a date, tap a free seat (or use the accessible select), confirm.
-- The successful reservation appears in the Mini App and in the bot's
-  «Мої бронювання». Dates before today in Europe/Kyiv are rejected.
+- Choose a date, tap one or several free seats directly on the map, confirm.
+  Tapping an already selected seat removes it from the selection. Selected
+  seat chips also have remove buttons; there is no dropdown picker.
+- The Mini App shows the successful reservation confirmation. The personal
+  booking list is available only through the bot's «Мої бронювання» button;
+  it is not displayed or fetched on the website. Dates before today in
+  Europe/Kyiv are rejected.
 - Occupied seats are marked red. Availability refreshes every 30 seconds;
   the database remains authoritative at confirmation.
 - Browser preview can view availability but cannot create reservations or
@@ -39,6 +47,24 @@ allowing selection. Do not regenerate IDs after reordering SVG paths without
 an explicit data-migration plan.
 
 ## API and storage
+
+Multiple places are confirmed through `POST /api/v1/bookings/batch` with
+`{day, seat_ids, request_id}`. All selected places must be active and free;
+otherwise no new reservation in the group is saved. The response identifies
+unavailable seats so they can be removed before confirming the remainder.
+
+The transaction locks all selected seats in stable ID order, then inserts the
+batch record and all reservations atomically. `pool_booking_batches` records
+the authenticated owner, date and canonical selection for safe retries.
+Child booking UUIDs are derived from the request UUID and seat ID. Reusing a
+request ID with a different owner/date/selection is rejected. Exact retries do
+not duplicate reservations. The existing single-seat endpoint remains for
+compatibility. The bot lists all saved seats in «Мої бронювання» as before.
+
+The only selection-size bound is the map's 387 seats; no pricing or commercial
+per-user limit has been introduced. Payments remain disabled. PostgreSQL
+verification uses overlapping concurrent groups in a temporary database to
+confirm that one whole group wins and the losing group has no partial rows.
 
 - `GET /api/v1/pool/availability?day=YYYY-MM-DD`: occupied IDs, map hash,
   server-local current date. No personal information.
@@ -110,3 +136,7 @@ retry safety, ownership and persistence in a temporary database that is then
 removed. No fake bookings are inserted into production by these tests.
 
 Real user booking through a Telegram client still needs a device check.
+# Відображення в Telegram
+
+«Мої бронювання» показує лише сьогоднішні й майбутні відвідування за часовим поясом Europe/Kyiv, найближчі першими. Минулі записи зберігаються в базі для історії. Місця на одну дату згруповані в картку з короткою датою, виділеними номерами та часом «Цілий день». Довгі переліки автоматично розбиваються на повідомлення в межах ліміту Telegram.
+

@@ -2,6 +2,24 @@
 
 Published 13 November 2026: https://uwelnes.site.
 
+Booking routes `/` and `/book` use a fixed viewport with a compact date toolbar
+and bottom confirmation dock. One finger pans the map, two fingers pinch;
+ordinary mouse-wheel movement zooms. Taps toggle seats immediately without
+automatic zoom or pan. The selection summary reserves a stable height so
+choosing places does not resize the map. Reset shows the
+whole map without clearing selection. Zoom and reset buttons remain visible; directional arrows are omitted.
+The counter uses only administrator-enabled seats as its denominator. Telegram vertical swipes are disabled while this
+screen is active and restored on leaving it.
+
+The embedded admin map keeps page scrolling: one finger scrolls the page,
+two fingers operate the map. Desktop users can drag or zoom with Ctrl + wheel.
+Neither map treats dragging as seat selection. SVG geometry is unchanged.
+
+Page zoom is locked at scale 1 through viewport settings, touch-action and
+native gesture guards. Ctrl+wheel outside the map and page zoom shortcuts are
+suppressed. The interactive map retains its independent zoom/pan controls.
+Mobile form fields use at least 16px text to avoid focus-triggered page zoom.
+
 The current frontend needs no server-side rendering or API requests. A Next.js
 static export is built locally and served by `uwelnes-web-1` (`caddy:2-alpine`),
 with a 96 MiB memory limit and automatic restart. No new host ports are exposed.

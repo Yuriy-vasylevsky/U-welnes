@@ -1,6 +1,21 @@
+import { pricing } from "./pricing-fixture";
 import { test, expect } from "@playwright/test";
 import fs from "node:fs";
-test("SVG renders, navigation and zoom work without Telegram", async ({
+import catalog from "../apps/web/data/seats.json";
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/v1/pool/**", (route) =>
+    route.fulfill({
+      json: {
+        enabled: {},
+        numbers: {},
+        reserved: [],
+        today: "2026-11-14",
+        ...pricing, map_version: catalog.source_sha256,
+      },
+    }),
+  );
+});
+test("Single-page booking, logo and map zoom work without Telegram", async ({
   page,
 }, testInfo) => {
   const errors: string[] = [];
@@ -37,23 +52,14 @@ test("SVG renders, navigation and zoom work without Telegram", async ({
     path: `test-results/${testInfo.project.name}-pool.png`,
     fullPage: true,
   });
-  const mobile = testInfo.project.name === "mobile";
-  if (mobile) await page.getByRole("button", { name: "Відкрити меню" }).click();
-  const nav = page.getByRole("navigation", {
-    name: mobile ? "Мобільна навігація" : "Головна навігація",
-  });
-  await nav.getByRole("link", { name: "Послуги", exact: true }).click();
+  await expect(page.locator("header .brand-logo")).toBeVisible();
+  await expect(page.locator("header .brand-name")).toHaveText("WELLNESS");
+  await expect(page.getByRole("navigation")).toHaveCount(0);
+  await expect(page.locator("dialog")).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "Послуги", exact: true }),
-  ).toBeVisible();
-  if (mobile) {
-    await expect(page.locator("dialog")).not.toBeVisible();
-    await page.getByRole("button", { name: "Відкрити меню" }).click();
-  }
-  await nav.getByRole("link", { name: "Контакти", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Контакти", exact: true }),
-  ).toBeVisible();
+    page.getByRole("heading", { name: "Ваш день біля басейну" }),
+  ).toHaveCount(1);
+  await expect(page.getByLabel("Дата відвідування")).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -106,7 +112,9 @@ test("wheel and drag or touch pinch move the viewport", async ({
     await expect.poll(matrix).not.toBe("matrix(1, 0, 0, 1, 0, 0)");
   } else {
     await page.mouse.move(x, y);
+    await page.keyboard.down("Control");
     await page.mouse.wheel(0, -400);
+    await page.keyboard.up("Control");
     await expect.poll(matrix).not.toBe("matrix(1, 0, 0, 1, 0, 0)");
     // Let wheel animation settle before testing a separate drag.
     await page.waitForTimeout(500);

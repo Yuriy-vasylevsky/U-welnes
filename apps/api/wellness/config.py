@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     api_port: int = 8000
     environment: str = "development"
     database_url: SecretStr = SecretStr("")
+    admin_telegram_ids: list[int] = []
     cors_origins: list[str] = ["http://localhost:3000"]
 
     def validate_bot(self) -> None:

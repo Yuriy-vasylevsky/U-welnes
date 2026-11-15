@@ -36,7 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def database_error(request, error):
         return JSONResponse(status_code=503, content={"detail": "booking_unavailable"})
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins,
-                       allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Content-Type", "Authorization"])
+                       allow_credentials=False, allow_methods=["GET", "POST", "PUT"], allow_headers=["Content-Type", "Authorization"])
     @app.get("/health", tags=["health"])
     def health() -> dict[str, str]:
         database = getattr(app.state, "booking_store", None)

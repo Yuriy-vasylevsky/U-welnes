@@ -49,6 +49,13 @@ def test_bot_commands_without_network():
                 await dispatcher.feed_update(bot, update)
                 method = bot.session.make_request.call_args.args[1]
                 if command == "/start":
+                    from aiogram.methods import SendPhoto
+                    from wellness.bot import WELCOME_PHOTO, WELCOME_CAPTION
+                    assert isinstance(method, SendPhoto)
+                    assert WELCOME_PHOTO.is_file()
+                    assert method.caption == WELCOME_CAPTION
+                    assert method.parse_mode == "HTML"
+                    assert len(method.caption) < 1024
                     assert method.reply_markup.inline_keyboard[0][0].web_app.url == "https://pool.example/book"
                 else:
                     assert "/start" in method.text

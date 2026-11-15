@@ -1,11 +1,13 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 type WebApp = {
   initData?: string;
   ready: () => void;
   expand: () => void;
+  disableVerticalSwipes?: () => void;
+  enableVerticalSwipes?: () => void;
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
   viewportStableHeight?: number;
@@ -19,26 +21,47 @@ declare global {
     Telegram?: { WebApp?: WebApp };
   }
 }
-const links = [
-  ["/", "Басейн"],
-  ["/services", "Послуги"],
-  ["/contacts", "Контакти"],
-];
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
-  const dialog = useRef<HTMLDialogElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
+  const immersive = pathname === "/" || pathname === "/book";
   useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
+    if (!immersive) return;
+    const app = window.Telegram?.WebApp;
+    app?.disableVerticalSwipes?.();
+    return () => app?.enableVerticalSwipes?.();
+  }, [immersive]);
   useEffect(() => {
-    if (open) dialog.current?.showModal();
-    else if (dialog.current?.open) {
-      dialog.current.close();
-      trigger.current?.focus();
-    }
-  }, [open]);
+    const inMap = (target: EventTarget | null) =>
+      target instanceof Element && !!target.closest(".map-viewport");
+    const stopGesture = (event: Event) => event.preventDefault();
+    const stopPagePinch = (event: TouchEvent) => {
+      if (event.touches.length > 1 && !inMap(event.target))
+        event.preventDefault();
+    };
+    const stopPageWheelZoom = (event: WheelEvent) => {
+      if (event.ctrlKey && !inMap(event.target)) event.preventDefault();
+    };
+    const stopPageZoomKeys = (event: KeyboardEvent) => {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        ["+", "=", "-", "_", "0"].includes(event.key)
+      )
+        event.preventDefault();
+    };
+    // Safari native gestures zoom the page; the map uses independent touch events.
+    document.addEventListener("gesturestart", stopGesture, { passive: false });
+    document.addEventListener("gesturechange", stopGesture, { passive: false });
+    document.addEventListener("touchmove", stopPagePinch, { passive: false });
+    document.addEventListener("wheel", stopPageWheelZoom, { passive: false });
+    document.addEventListener("keydown", stopPageZoomKeys);
+    return () => {
+      document.removeEventListener("gesturestart", stopGesture);
+      document.removeEventListener("gesturechange", stopGesture);
+      document.removeEventListener("touchmove", stopPagePinch);
+      document.removeEventListener("wheel", stopPageWheelZoom);
+      document.removeEventListener("keydown", stopPageZoomKeys);
+    };
+  }, []);
   useEffect(() => {
     const app = window.Telegram?.WebApp;
     if (!app) return;
@@ -68,18 +91,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
     events.forEach((e) => app.onEvent(e, sync));
     return () => events.forEach((e) => app.offEvent(e, sync));
   }, []);
-  const navigation = () =>
-    links.map(([href, label]) => (
-      <Link
-        key={href}
-        href={href}
-        aria-current={pathname === href ? "page" : undefined}
-      >
-        {label}
-      </Link>
-    ));
   return (
-    <div className="app-shell">
+    <div className={`app-shell${immersive ? " booking-shell" : ""}`}>
       <a className="skip" href="#main">
         До вмісту
       </a>
@@ -89,43 +102,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
           className="brand"
           aria-label="U-Wellness Space — головна"
         >
-          <span className="brand-mark">U</span>
-          <span>
-            U-WELLNESS<small>SPACE</small>
-          </span>
+          <img
+            className="brand-logo"
+            src="/brand/wellness-logo.png"
+            alt=""
+            width="52"
+            height="62"
+          />
+          <span className="brand-name">WELLNESS</span>
         </Link>
-        <nav className="desktop-nav" aria-label="Головна навігація">
-          {navigation()}
-        </nav>
-        <button
-          ref={trigger}
-          className="menu-button"
-          onClick={() => setOpen(true)}
-          aria-label="Відкрити меню"
-          aria-expanded={open}
-          aria-controls="mobile-menu"
-        >
-          ☰
-        </button>
       </header>
-      <dialog
-        id="mobile-menu"
-        ref={dialog}
-        onCancel={() => setOpen(false)}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) setOpen(false);
-        }}
-      >
-        <button
-          className="close-menu"
-          onClick={() => setOpen(false)}
-          aria-label="Закрити меню"
-        >
-          ×
-        </button>
-        <p className="eyebrow">U-WELLNESS SPACE</p>
-        <nav aria-label="Мобільна навігація">{navigation()}</nav>
-      </dialog>
       <main id="main">{children}</main>
       <footer>
         <span>U-Wellness Space</span>

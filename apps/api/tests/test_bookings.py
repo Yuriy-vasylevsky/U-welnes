@@ -27,11 +27,17 @@ def auth(user=123, stamp=None):
 def client():
     config = Settings(_env_file=None, bot_token=TOKEN, database_url="sqlite://")
     with TestClient(create_app(config)) as value:
+        value.app.state.booking_store.set_seat_enabled("S001", True, False, 123)
         yield value
 
 
+def booking_day():
+    day = today_kyiv()
+    return day + timedelta(days=(-day.weekday()) % 7 or 7)
+
+
 def payload(**changes):
-    return {"day": (today_kyiv() + timedelta(days=1)).isoformat(), "seat_id": "S001", "request_id": str(uuid4()), **changes}
+    return {"day": booking_day().isoformat(), "seat_id": "S001", "request_id": str(uuid4()), **changes}
 
 
 def test_booking_ownership_availability_and_retry(client):
@@ -46,7 +52,7 @@ def test_booking_ownership_availability_and_retry(client):
     assert "user" not in str(available)
     assert client.post("/api/v1/bookings", json=payload(), headers=auth(456)).status_code == 409
     # A different date is independent.
-    assert client.post("/api/v1/bookings", json=payload(day=(today_kyiv()+timedelta(days=2)).isoformat()), headers=auth(456)).status_code == 201
+    assert client.post("/api/v1/bookings", json=payload(day=(booking_day()+timedelta(days=1)).isoformat()), headers=auth(456)).status_code == 201
 
 
 @pytest.mark.parametrize("headers", [{}, {"Authorization": "tma forged"}, auth(stamp=1), auth(True)])
@@ -67,9 +73,10 @@ def test_invalid_seat_date_and_client_user_id(client):
 def test_database_concurrency_and_persistence(tmp_path):
     url = "sqlite:///" + (tmp_path / "booking.db").as_posix()
     store = BookingStore(url); store.initialize()
+    store.set_seat_enabled("S001", True, False, 123)
     def attempt(user):
         try:
-            store.reserve(user, today_kyiv(), "S001", str(uuid4()))
+            store.reserve(user, booking_day(), "S001", str(uuid4()))
             return True
         except SeatTaken:
             return False
@@ -78,5 +85,5 @@ def test_database_concurrency_and_persistence(tmp_path):
     assert results.count(True) == 1
     store.close()
     reopened = BookingStore(url)
-    assert reopened.availability(today_kyiv()) == ["S001"]
+    assert reopened.availability(booking_day()) == ["S001"]
     reopened.close()
